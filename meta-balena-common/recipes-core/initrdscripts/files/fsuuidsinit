@@ -1,0 +1,130 @@
+#!/bin/sh
+
+# Copyright 2019 Balena Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#
+# Initializes unique filesystem UUIDs
+#
+
+# shellcheck disable=SC1091
+. /usr/libexec/os-helpers-logging
+. /usr/libexec/os-helpers-fs
+
+# Enable module function
+fsuuidsinit_enabled() {
+    # shellcheck disable=SC2154
+    if [ "$bootparam_flasher" = "true" ]; then
+        info "Flasher detected. Avoiding filesystem UUIDS initialization."
+        return 1
+    fi
+
+    # Check whether UUIDs have already been regenerated
+    mkdir -p /mnt
+    tmpdir=$(mktemp -d -p /mnt)
+    disk=$(get_state_path_from_label "resin-state")
+    mount "${disk}" "${tmpdir}"
+    if [ -e "${tmpdir}/unique-uuids-state" ]; then
+        info "UUIDs already generated so no need to initialize any new ones."
+        umount "${tmpdir}"
+        return 1
+    fi
+    umount "${tmpdir}"
+    return 0
+}
+
+update_mounttime() {
+    tmpdir=$(mktemp -d -p /mnt)
+    mount "${dev}" "${tmpdir}"
+    umount "${tmpdir}"
+}
+
+regenerate_uuid() {
+    dev=$1
+    # Filesystem type specific quirks
+    fstype=$2
+    old_uuid="$(get_dev_uuid "$dev")"
+    case $fstype in
+        vfat)
+            # mlabel doesn't work on file directly. It needs a drive to file
+            # mapping in its configuration.
+            drive=a:
+            info "Running quirks for $fstype..."
+            cat > "/etc/mtools.conf" <<EOF
+drive ${drive} file="$dev" exclusive
+EOF
+            cmd="mlabel -s -n"
+            if ! eval "${cmd}" "${drive}"; then
+                error "Failed to generate a new UUID for $dev."
+                return 1
+            fi
+            ;;
+        ext*)
+            # tune2fs refuses to work when the filesystem was not
+            # freshly checked.
+            info "Running quirks for $fstype..."
+            # Remount to update lastmount time to current time
+            # Otherwise in systems with no RTC lastmount could be in the future
+            # and e2fsck does not update the last filesystem check time
+            if [ -e /etc/e2fsck.conf ] && grep broken_system_clock /etc/e2fsck.conf > /dev/null; then
+                broken_system_clock=$(grep broken_system_clock /etc/e2fsck.conf | cut -d "=" -f2)
+                    if [ "${broken_system_clock}" = "1" ]; then
+                        update_mounttime "$dev"
+                    fi
+            fi
+            if ! e2fsck -fp "$dev"; then
+                warn "Failed to force check filesystem on $dev."
+            fi
+            cmd="echo y | EXT2FS_NO_MTAB_OK=1  tune2fs -U random"
+            if ! eval "${cmd}" "${dev}"; then
+                error "Failed to generate a new UUID for $dev."
+                return 1
+            fi
+            ;;
+        *) ;;
+        esac
+
+    new_uuid="$(get_dev_uuid "$dev")"
+    info "The new filesystem UUID for $dev is $new_uuid (from $old_uuid)."
+    return 0
+}
+
+# Main module function
+fsuuidsinit_run() {
+    # Generate new UUIDs only for resin-root filesystems
+    # These are passed by the bootloaders, and used to generate the udev
+    # by-state symlinks that are then used by everything else.
+    info "Generating new UUIDs for root filesystems..."
+    for dev in /dev/disk/by-state/resin-root*; do
+        uuid="$(get_dev_uuid "${dev}")"
+        fstype="$(get_dev_fstype "${dev}")"
+        if regenerate_uuid "${dev}" "${fstype}"; then
+            if [ "${uuid}" = "$(get_cmdline_root_uuid)" ]; then
+                bootparam_root="UUID=$(get_dev_uuid "${dev}")"
+                echo "${bootparam_root}" > /run/initramfs/bootparam_root
+                info "Using new root UUID: ${bootparam_root}"
+            fi
+        else
+            error "UUIDs not regenerated - retry on next boot"
+            return
+        fi
+    done
+    # Add flag to the state partition so UUIDs are not regenerated again
+    disk=$(get_state_path_from_label "resin-state")
+    tmpdir=$(mktemp -d -p /mnt)
+    mount "${disk}" "${tmpdir}"
+    touch ${tmpdir}/unique-uuids-state
+    umount "${tmpdir}"
+    info "Unique filesystem UUIDs generated."
+}
