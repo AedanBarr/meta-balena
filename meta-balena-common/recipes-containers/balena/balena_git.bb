@@ -48,6 +48,8 @@ RRECOMMENDS_${PN} += "kernel-module-nf-nat"
 DEPENDS_remove_class-native = "go-cross-native"
 DEPENDS_append_class-native = " go-native"
 
+INSANE_SKIP_${PN} += "already-stripped"
+
 FILES_${PN} += " \
 	/lib/systemd/system/* \
 	/home/root \
