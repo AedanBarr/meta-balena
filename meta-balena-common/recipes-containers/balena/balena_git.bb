@@ -112,6 +112,7 @@ do_compile() {
 
 	export DOCKER_GITCOMMIT="${SRCREV}"
 	export DOCKER_BUILDTAGS="no_buildkit no_btrfs no_cri no_devmapper no_zfs exclude_disk_quota exclude_graphdriver_btrfs exclude_graphdriver_devicemapper exclude_graphdriver_zfs"
+	export DOCKER_LDFLAGS="-s"
 
 	VERSION=${BALENA_VERSION} ./hack/make.sh dynbinary-balena
 
