@@ -11,10 +11,10 @@ LIC_FILES_CHKSUM = "file://src/import/LICENSE;md5=4859e97a9c7780e77972d989f0823f
 
 inherit systemd go pkgconfig useradd
 
-BALENA_VERSION = "19.03.5-dev"
+BALENA_VERSION = "19.03.8-dev"
 BALENA_BRANCH= "19.03-balena"
 
-SRCREV = "2cf4a6bf917791eefaa1a7fe43372e8501d68ea1"
+SRCREV = "93c0757964dab056535090c73846432d149452a5"
 SRC_URI = "\
 	git://github.com/resin-os/balena.git;branch=${BALENA_BRANCH};destsuffix=git/src/import \
 	file://balena.service \
