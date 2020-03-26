@@ -14,7 +14,7 @@ inherit systemd go pkgconfig useradd
 BALENA_VERSION = "19.03.8-dev"
 BALENA_BRANCH= "19.03-balena"
 
-SRCREV = "93c0757964dab056535090c73846432d149452a5"
+SRCREV = "1f864a53975db2ec3cd349a9d66cac6375f638a6"
 SRC_URI = "\
 	git://github.com/resin-os/balena.git;branch=${BALENA_BRANCH};destsuffix=git/src/import \
 	file://balena.service \
